@@ -6,7 +6,7 @@ import {
 import { 
   Trophy, Activity, Target, Zap, RefreshCw, 
   TrendingUp, Clock, Shield, Gauge, Microscope, Star, Footprints, CalendarDays,
-  Medal, BarChart2, BookOpen, ExternalLink, PlayCircle, Search
+  Medal, BookOpen, ExternalLink, Search
 } from 'lucide-react';
 
 // --- 定数設定 ---
@@ -36,7 +36,7 @@ const METRICS = {
     { id: 'b_war', label: '野手WAR', color: '#f472b6', icon: <Star size={14} />, desc: '控え選手と比較して何勝分チームに貢献したかの総合指標。', ranks: { team: 1, league: 2, mlb: 3 }, mlbAvg: 2.0, thresholds: [2.0, 5.0, 8.0] },
   ],
   pitching: [
-    { id: 'w', label: '勝利数', color: '#3b82f6', icon: <Shield size={14} />, desc: '投げている間に味方がリードし勝った試合数。エースの証明。', ranks: { team: 1, league: 3, mlb: 5 }, mlbAvg: 8, thresholds: [8, 13, 18] },
+    { id: 'w', label: '勝利数', color: '#3b82f6', icon: <Shield size={14} />, desc: '自分が投げてチームが勝った数。試合を作るエースの能力。', ranks: { team: 1, league: 3, mlb: 5 }, mlbAvg: 8, thresholds: [8, 13, 18] },
     { id: 'k', label: '奪三振', color: '#10b981', icon: <Gauge size={14} />, desc: '三振を奪った数。ピンチを自力で凌ぐ支配力の象徴。', ranks: { team: 1, league: 4, mlb: 7 }, mlbAvg: 120, thresholds: [130, 190, 230] },
     { id: 'ip', label: '投球回', color: '#8b5cf6', icon: <Clock size={14} />, desc: 'マウンドに立ち続けた回数。長い回を投げる信頼の厚さ。', ranks: { team: 2, league: 15, mlb: 30 }, mlbAvg: 140, thresholds: [150, 185, 205] },
     { id: 'era', label: '防御率', color: '#f43f5e', icon: <Microscope size={14} />, desc: '平均失点。低いほど「点を取られない最強投手」。', ranks: { team: 1, league: 1, mlb: 1 }, mlbAvg: 4.30, thresholds: [4.30, 3.30, 2.50] },
@@ -45,7 +45,6 @@ const METRICS = {
   ]
 };
 
-// --- ヘルパー関数群 ---
 const generatePaceData = (metric, stats) => {
   const data = [];
   const startDate = new Date('2026-03-20');
@@ -160,16 +159,16 @@ export default function App() {
         <div>
           <h1 className="text-3xl md:text-4xl font-black italic text-white tracking-tighter">
             SHO-TIME <span className="text-blue-500">TRACKER</span>
-            <span className="text-[10px] text-slate-500 not-italic ml-2 font-normal uppercase tracking-widest border border-slate-700 px-1.5 py-0.5 rounded">V32</span>
+            <span className="text-[10px] text-slate-500 not-italic ml-2 font-normal uppercase tracking-widest border border-slate-700 px-1.5 py-0.5 rounded">V33</span>
           </h1>
           <p className="text-xs md:text-sm text-slate-400 font-medium tracking-wide">
-            大谷翔平の2026シーズン成績分析・可視化ダッシュボード
+            大谷翔平の2026シーズン成績分析・可視化サイト
           </p>
         </div>
         <div className="bg-slate-900 border border-slate-800 p-2.5 rounded-xl text-[11px] font-mono w-full md:w-auto shadow-xl">
           <div className="flex justify-between md:justify-start gap-4">
-            <span className="text-slate-400">消化: <span className="text-white font-bold">{ESTIMATED_GAMES_PLAYED}G</span></span>
-            <span className="text-slate-400">残り: <span className="text-blue-400 font-bold">{REMAINING_GAMES}G</span></span>
+            <span className="text-slate-400">チーム消化: <span className="text-white font-bold">{ESTIMATED_GAMES_PLAYED}G</span></span>
+            <span className="text-slate-400">残り試合: <span className="text-blue-400 font-bold">{REMAINING_GAMES}G</span></span>
           </div>
         </div>
       </header>
@@ -179,11 +178,7 @@ export default function App() {
         <div className="flex overflow-x-auto gap-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="px-2.5 py-2 bg-red-950/40 text-red-400 text-[9px] font-black rounded-lg shrink-0 border border-red-900/40 flex items-center">BAT</div>
           {METRICS.batting.map(m => (
-            <button key={m.id} onClick={() => {
-                setActiveMetricId(m.id);
-                // GAイベント発火 (オプション)
-                if (window.gtag) window.gtag('event', 'metric_change', { 'metric_name': m.label });
-              }} className={`px-4 py-2 rounded-xl border shrink-0 transition-all ${activeMetricId === m.id ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500/50' : 'bg-slate-900 border-slate-800 hover:border-slate-700'}`}>
+            <button key={m.id} onClick={() => setActiveMetricId(m.id)} className={`px-4 py-2 rounded-xl border shrink-0 transition-all ${activeMetricId === m.id ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500/50' : 'bg-slate-900 border-slate-800 hover:border-slate-700'}`}>
               <div className="text-[9px] text-slate-500 font-bold mb-0.5">{m.label}</div>
               <div className={`text-lg font-black font-mono leading-none ${activeMetricId === m.id ? 'text-white' : 'text-slate-300'}`}>{currentStat[m.id]}</div>
             </button>
@@ -192,10 +187,7 @@ export default function App() {
         <div className="flex overflow-x-auto gap-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="px-2.5 py-2 bg-emerald-950/40 text-emerald-400 text-[9px] font-black rounded-lg shrink-0 border border-emerald-900/40 flex items-center">PIT</div>
           {METRICS.pitching.map(m => (
-            <button key={m.id} onClick={() => {
-                setActiveMetricId(m.id);
-                if (window.gtag) window.gtag('event', 'metric_change', { 'metric_name': m.label });
-              }} className={`px-4 py-2 rounded-xl border shrink-0 transition-all ${activeMetricId === m.id ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500/50' : 'bg-slate-900 border-slate-800 hover:border-slate-700'}`}>
+            <button key={m.id} onClick={() => setActiveMetricId(m.id)} className={`px-4 py-2 rounded-xl border shrink-0 transition-all ${activeMetricId === m.id ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500/50' : 'bg-slate-900 border-slate-800 hover:border-slate-700'}`}>
               <div className="text-[9px] text-slate-500 font-bold mb-0.5">{m.label}</div>
               <div className={`text-lg font-black font-mono leading-none ${activeMetricId === m.id ? 'text-white' : 'text-slate-300'}`}>{currentStat[m.id]}</div>
             </button>
@@ -206,21 +198,19 @@ export default function App() {
       {/* 3. AD SECTION */}
       <section className="max-w-6xl w-full mx-auto flex flex-col gap-3">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-stretch">
-          
-          <div className="flex flex-col gap-1.5 h-full">
+          <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-1.5 px-1">
                 <span className="bg-blue-500 w-1.5 h-1.5 rounded-full animate-pulse"></span>
                 <span className="text-[10px] font-bold text-blue-400 tracking-widest uppercase">LIVE Streaming</span>
             </div>
-            <div className="relative overflow-hidden rounded-xl border border-slate-800 hover:border-blue-500/50 transition-all h-full min-h-[80px]">
-                <a href="https://px.a8.net/svt/ejp?a8mat=4B1N9L+C506SY+4EKC+631SX" rel="nofollow" target="_blank" className="block w-full h-full">
+            <div className="relative overflow-hidden rounded-xl border border-slate-800 hover:border-blue-500/50 transition-all">
+                <a href="https://px.a8.net/svt/ejp?a8mat=4B1N9L+C506SY+4EKC+631SX" rel="nofollow" target="_blank" className="block w-full">
                     <img border="0" width="600" height="100" alt="ABEMA MLB中継" src="https://www20.a8.net/svt/bgt?aid=260417289734&wid=001&eno=01&mid=s00000020550001022000&mc=1" className="w-full h-auto object-cover" />
                 </a>
                 <img border="0" width="1" height="1" src="https://www11.a8.net/0.gif?a8mat=4B1N9L+C506SY+4EKC+631SX" alt="" className="absolute opacity-0" />
             </div>
           </div>
-
-          <div className="flex flex-col gap-1.5 h-full">
+          <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-1.5 px-1">
                 <span className="bg-red-500 w-1.5 h-1.5 rounded-full animate-pulse"></span>
                 <span className="text-[10px] font-bold text-red-400 tracking-widest uppercase">Special Search</span>
@@ -232,20 +222,19 @@ export default function App() {
                    className="flex items-center justify-between bg-gradient-to-br from-slate-900 to-red-950/20 border border-slate-800 p-3 md:p-4 rounded-xl hover:border-red-500 transition-all group h-full"
                 >
                     <div className="flex items-center gap-3">
-                        <div className="bg-red-600 p-2.5 rounded-lg text-white shadow-lg shadow-red-900/20"><Search size={22} /></div>
+                        <div className="bg-red-600 p-2.5 rounded-lg text-white shadow-lg"><Search size={22} /></div>
                         <div>
-                            <div className="text-xs md:text-sm font-black text-white group-hover:text-red-300 transition-colors">大谷翔平ドジャースグッズを検索</div>
+                            <div className="text-xs md:text-sm font-black text-white group-hover:text-red-300 transition-colors">大谷翔平グッズを検索</div>
                             <div className="text-[10px] text-slate-500 font-bold mt-0.5">メルカリでお宝・人気アイテムを即チェック</div>
                         </div>
                     </div>
-                    <div className="bg-slate-800 p-1.5 rounded-full group-hover:bg-red-600 transition-colors shrink-0">
-                        <Activity size={14} className="text-slate-400 group-hover:text-white" />
+                    <div className="shrink-0 bg-slate-800 p-1.5 rounded-full group-hover:bg-red-600 transition-colors">
+                        <ExternalLink size={14} className="text-slate-400 group-hover:text-white" />
                     </div>
                 </a>
                 <img border="0" width="1" height="1" src="https://www11.a8.net/0.gif?a8mat=4B1N9L+C6720I+5LNQ+BW8O2" alt="" className="absolute opacity-0" />
             </div>
           </div>
-
         </div>
       </section>
 
@@ -271,21 +260,21 @@ export default function App() {
           </div>
           <div className="md:col-span-4 grid grid-cols-3 gap-2 bg-slate-950/40 p-2 rounded-xl border border-slate-800/50">
             <div className="flex flex-col items-center justify-center p-2 text-center">
-              <div className="text-[8px] text-slate-500 font-black uppercase mb-1">Team</div>
+              <div className="text-[8px] text-slate-500 font-black uppercase mb-1 whitespace-nowrap">ドジャース内</div>
               <div className={`text-xs font-black ${getRankStyle(activeMetricObj.ranks.team)}`}>{activeMetricObj.ranks.team}位</div>
             </div>
             <div className="flex flex-col items-center justify-center p-2 border-x border-slate-800/50 text-center">
-              <div className="text-[8px] text-slate-500 font-black uppercase mb-1">League</div>
+              <div className="text-[8px] text-slate-500 font-black uppercase mb-1 whitespace-nowrap">ナ・リーグ内</div>
               <div className={`text-xs font-black ${getRankStyle(activeMetricObj.ranks.league)}`}>{activeMetricObj.ranks.league}位</div>
             </div>
             <div className="flex flex-col items-center justify-center p-2 text-center">
-              <div className="text-[8px] text-slate-500 font-black uppercase mb-1">MLB</div>
+              <div className="text-[8px] text-slate-500 font-black uppercase mb-1 whitespace-nowrap">MLB全体</div>
               <div className={`text-xs font-black ${getRankStyle(activeMetricObj.ranks.mlb)}`}>{activeMetricObj.ranks.mlb}位</div>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 h-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50 flex flex-col h-[320px]">
             <div className="flex justify-between items-center mb-4">
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
@@ -316,4 +305,41 @@ export default function App() {
 
           <div className="bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50 flex flex-col h-[320px]">
             <div className="flex justify-between items-center mb-1 text-left">
-              <span className="text-[10p
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                <BarChart2 size={12} /> 年度別実績・基準
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mb-3 text-[8px] font-mono bg-slate-900/50 p-2 rounded-lg border border-slate-800">
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-0.5 bg-slate-500"></span><span className="text-slate-400 uppercase">平均 ({activeMetricObj.thresholds[0]})</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-0.5 bg-emerald-500"></span><span className="text-emerald-500 uppercase">オールスター級 ({activeMetricObj.thresholds[1]})</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-0.5 bg-amber-500"></span><span className="text-amber-500 uppercase">MVP級 ({activeMetricObj.thresholds[2]})</span></div>
+            </div>
+            <div className="flex-grow w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={annualData} margin={{ top: 20, right: 5, left: -25, bottom: 0 }}>
+                  <CartesianGrid stroke="#1e293b" vertical={false} strokeDasharray="3 3"/>
+                  <XAxis dataKey="year" fontSize={9} tickLine={false} axisLine={false} tickMargin={10} fontStyle="italic" fontWeight="bold"/>
+                  <YAxis fontSize={8} domain={[0, calculatedMax]} tickLine={false} axisLine={false} width={30}/>
+                  <ReferenceLine y={activeMetricObj.thresholds[0]} stroke="#64748b" strokeDasharray="3 3" opacity={0.6} />
+                  <ReferenceLine y={activeMetricObj.thresholds[1]} stroke="#10b981" strokeDasharray="3 3" opacity={0.5} />
+                  <ReferenceLine y={activeMetricObj.thresholds[2]} stroke="#fbbf24" strokeDasharray="3 3" opacity={0.5} />
+                  <Bar dataKey={activeMetricId} stackId="a" radius={[6, 6, 0, 0]}>
+                    {annualData.map((e, i) => <Cell key={i} fill={e.year === '2026' ? '#3b82f6' : '#334155'} />)}
+                    <LabelList content={renderLabel} />
+                  </Bar>
+                  {activeMetricId !== 'era' && <Bar dataKey={activeMetricId + '_proj'} stackId="a" fill="transparent" stroke="#3b82f6" strokeDasharray="3 3" radius={[6, 6, 0, 0]}/>}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer className="max-w-6xl w-full mx-auto text-center text-[9px] text-slate-600 font-mono pt-6 pb-8 tracking-widest uppercase">
+        © 2026 Dodgers Nation Analytics • Not Official • Create for Fans
+      </footer>
+    </div>
+  );
+}
+
+```
