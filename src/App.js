@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
-  ResponsiveContainer, ReferenceArea, ReferenceLine, Cell, LabelList
+  ResponsiveContainer, ReferenceLine, Cell, LabelList
 } from 'recharts';
 import { 
-  Trophy, Activity, Target, Zap, RefreshCw, 
+  Trophy, Activity, Target, Zap, 
   TrendingUp, Clock, Shield, Gauge, Microscope, Star, Footprints, CalendarDays,
-  Medal, BookOpen, ExternalLink, Search
+  Medal, BarChart2, BookOpen, ExternalLink, Search
 } from 'lucide-react';
 
 // --- 定数設定 ---
@@ -30,7 +30,7 @@ const METRICS = {
   batting: [
     { id: 'hr', label: '本塁打', color: '#f87171', icon: <Trophy size={14} />, desc: 'スタンドに叩き込む数。一振りで試合を決める力。', ranks: { team: 1, league: 6, mlb: 12 }, mlbAvg: 15, thresholds: [15, 30, 45] },
     { id: 'rbi', label: '打点', color: '#fb923c', icon: <Target size={14} />, desc: 'ランナーをホームに返した数。チャンスでの貢献度。', ranks: { team: 2, league: 8, mlb: 15 }, mlbAvg: 55, thresholds: [55, 85, 110] },
-    { id: 'sb', label: '盗塁', color: '#fbbf24', icon: <Zap size={14} />, desc: 'スピードで次の塁を奪う数。相手への大きなプレッシャー。', ranks: { team: 2, league: 12, mlb: 25 }, mlbAvg: 8, thresholds: [10, 25, 40] },
+    { id: 'sb', label: '盗塁', color: '#fbbf24', icon: <Zap size={14} />, desc: 'スピードで進塁する数。相手への大きなプレッシャー。', ranks: { team: 2, league: 12, mlb: 25 }, mlbAvg: 8, thresholds: [10, 25, 40] },
     { id: 'h', label: '安打', color: '#60a5fa', icon: <Activity size={14} />, desc: '技術で出塁した数。攻撃のリズムを作ります。', ranks: { team: 3, league: 15, mlb: 30 }, mlbAvg: 100, thresholds: [110, 160, 190] },
     { id: 'bb', label: '四死球', color: '#a78bfa', icon: <Footprints size={14} />, desc: '選球眼。打たれるくらいなら歩かせようと思わせる恐怖の証。', ranks: { team: 1, league: 4, mlb: 8 }, mlbAvg: 40, thresholds: [45, 75, 95] },
     { id: 'b_war', label: '野手WAR', color: '#f472b6', icon: <Star size={14} />, desc: '控え選手と比較して何勝分貢献したかの総合指標。', ranks: { team: 1, league: 2, mlb: 3 }, mlbAvg: 2.0, thresholds: [2.0, 5.0, 8.0] },
@@ -40,7 +40,7 @@ const METRICS = {
     { id: 'k', label: '奪三振', color: '#10b981', icon: <Gauge size={14} />, desc: '支配力の象徴。ピンチを自力で凌ぐ最強のアウト奪取。', ranks: { team: 1, league: 4, mlb: 7 }, mlbAvg: 120, thresholds: [130, 190, 230] },
     { id: 'ip', label: '投球回', color: '#8b5cf6', icon: <Clock size={14} />, desc: 'マウンドに立ち続けた回数。長い回を投げる信頼の証。', ranks: { team: 2, league: 15, mlb: 30 }, mlbAvg: 140, thresholds: [150, 185, 205] },
     { id: 'era', label: '防御率', color: '#f43f5e', icon: <Microscope size={14} />, desc: '平均自責点。低いほど「点を取られない最強投手」。', ranks: { team: 1, league: 1, mlb: 1 }, mlbAvg: 4.30, thresholds: [4.30, 3.30, 2.50] },
-    { id: 'g', label: '登板試合', color: '#2dd4bf', icon: <CalendarDays size={14} />, desc: 'マウンドに上がった回数。頑丈な体と安定感。', ranks: { team: 1, league: 10, mlb: 20 }, mlbAvg: 25, thresholds: [25, 30, 33] },
+    { id: 'g', label: '登板試合', color: '#2dd4bf', icon: <CalendarDays size={14} />, desc: 'マウンドに上がった試合数。頑丈な体と安定感。', ranks: { team: 1, league: 10, mlb: 20 }, mlbAvg: 25, thresholds: [25, 30, 33] },
     { id: 'p_war', label: '投手WAR', color: '#fb7185', icon: <Star size={14} />, desc: '投手としてどれだけチームに勝ち星を増やしたかの指標。', ranks: { team: 1, league: 3, mlb: 5 }, mlbAvg: 2.0, thresholds: [2.0, 4.5, 6.5] },
   ]
 };
@@ -120,14 +120,13 @@ const LegendBadge = ({ color, label }) => (
 
 export default function App() {
   const [activeMetricId, setActiveMetricId] = useState('hr');
-  const [stats, setStats] = useState(INITIAL_STATS);
   const [showTodayCompare, setShowTodayCompare] = useState(false);
 
   const activeMetricObj = [...METRICS.batting, ...METRICS.pitching].find(m => m.id === activeMetricId) || METRICS.batting[0];
   
-  const paceData = useMemo(() => generatePaceData(activeMetricId, stats), [activeMetricId, stats]);
-  const annualData = useMemo(() => generateAnnualData(stats), [stats]);
-  const currentStat = stats.find(s => s.year === '2026') || {};
+  const paceData = useMemo(() => generatePaceData(activeMetricId, INITIAL_STATS), [activeMetricId]);
+  const annualData = useMemo(() => generateAnnualData(INITIAL_STATS), []);
+  const currentStat = INITIAL_STATS.find(s => s.year === '2026') || {};
   const todayData = paceData.find(d => d.label === '4/17') || paceData[0];
 
   const getProjectedValue = (mId) => {
@@ -162,17 +161,17 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050914] text-slate-200 p-3 md:p-6 flex flex-col gap-5">
+    <div className="min-h-screen bg-[#050914] text-slate-200 p-3 md:p-6 flex flex-col gap-5 font-sans overflow-x-hidden">
       
-      {/* 1. Header */}
+      {/* Header */}
       <header className="max-w-6xl w-full mx-auto flex flex-col md:flex-row justify-between items-start md:items-end gap-3 z-10">
-        <div>
+        <div className="text-left">
           <h1 className="text-3xl md:text-4xl font-black italic text-white tracking-tighter">
             SHO-TIME <span className="text-blue-500">TRACKER</span>
-            <span className="text-[10px] text-slate-500 not-italic ml-2 font-normal uppercase tracking-widest border border-slate-700 px-1.5 py-0.5 rounded text-center">V35</span>
+            <span className="text-[10px] text-slate-500 not-italic ml-2 font-normal uppercase tracking-widest border border-slate-700 px-1.5 py-0.5 rounded text-center leading-none">V36</span>
           </h1>
-          <p className="text-xs md:text-sm text-slate-400 font-medium tracking-wide text-left">
-            大谷翔平の2026シーズン成績を分析・可視化するダッシュボード
+          <p className="text-xs md:text-sm text-slate-400 font-medium tracking-wide">
+            大谷翔平 2026 リアルタイム成績分析
           </p>
         </div>
         <div className="bg-slate-900 border border-slate-800 p-2.5 rounded-xl text-[11px] font-mono w-full md:w-auto shadow-xl">
@@ -183,7 +182,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* 2. Tabs */}
+      {/* Tabs */}
       <nav className="max-w-6xl w-full mx-auto flex flex-col gap-2">
         <div className="flex overflow-x-auto gap-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="px-2.5 py-2 bg-red-950/40 text-red-400 text-[9px] font-black rounded-lg shrink-0 border border-red-900/40 flex items-center">BAT</div>
@@ -205,7 +204,7 @@ export default function App() {
         </div>
       </nav>
 
-      {/* 3. AD SECTION */}
+      {/* AD SECTION */}
       <section className="max-w-6xl w-full mx-auto flex flex-col gap-3">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-stretch text-left">
           <div className="flex flex-col gap-1.5 h-full">
@@ -248,7 +247,7 @@ export default function App() {
         </div>
       </section>
 
-      {/* 4. Analytics Main */}
+      {/* Analytics Main */}
       <main className="max-w-6xl w-full mx-auto flex flex-col gap-6 bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 md:p-6 shadow-2xl overflow-hidden">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-800 pb-4 gap-4 text-left">
           <div className="flex items-center gap-3">
@@ -257,7 +256,7 @@ export default function App() {
           </div>
           <div className="text-4xl md:text-5xl font-black italic text-blue-400 drop-shadow-lg flex items-baseline leading-none">
             {getProjectedValue(activeMetricId)}
-            <span className="text-[10px] not-italic text-slate-500 ml-2 uppercase font-black tracking-widest border-l border-slate-700 pl-2 h-4 flex items-center">Expected</span>
+            <span className="text-[10px] not-italic text-slate-500 ml-2 uppercase font-black tracking-widest border-l border-slate-700 h-4 flex items-center pl-2">Expected</span>
           </div>
         </div>
 
@@ -287,26 +286,20 @@ export default function App() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 h-auto">
           {/* 日別累計トラッカー */}
           <div className="bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50 flex flex-col h-[320px] relative">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex justify-between items-center mb-4 text-left">
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
                 <TrendingUp size={12} /> 累計推移の比較
               </span>
-              <div className="flex items-center gap-2">
-                <div className="hidden sm:flex gap-1.5 mr-2">
-                    <LegendBadge color="#3b82f6" label="'26" />
-                    <LegendBadge color="#f43f5e" label="'24" />
-                </div>
-                <button 
-                  onClick={() => setShowTodayCompare(!showTodayCompare)} 
-                  className={`text-[9px] font-bold px-2 py-1 rounded transition-colors border ${showTodayCompare ? 'bg-blue-600 text-white border-blue-500 shadow-lg' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
-                >
-                  4/17比較
-                </button>
-              </div>
+              <button 
+                onClick={() => setShowTodayCompare(!showTodayCompare)} 
+                className={`text-[9px] font-bold px-2 py-1 rounded transition-colors border ${showTodayCompare ? 'bg-blue-600 text-white border-blue-500 shadow-lg' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+              >
+                4/17比較
+              </button>
             </div>
             
             {showTodayCompare && (
-              <div className="absolute top-12 right-4 bg-slate-900/95 backdrop-blur border border-slate-700 p-3 rounded-lg shadow-2xl z-50 text-[10px] space-y-1 animation-fade-in border-l-4 border-l-blue-500">
+              <div className="absolute top-12 right-4 bg-slate-900/95 backdrop-blur border border-slate-700 p-3 rounded-lg shadow-2xl z-50 text-[10px] space-y-1 border-l-4 border-l-blue-500">
                 <div className="font-bold border-b border-slate-700 pb-1 mb-1 flex justify-between">
                     <span>{activeMetricObj.label}</span>
                     <span className="text-slate-500 font-mono">4/17</span>
@@ -345,7 +338,7 @@ export default function App() {
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-1 mb-3 text-[8px] font-mono bg-slate-900/50 p-2 rounded-lg border border-slate-800">
               <div className="flex items-center gap-1.5"><span className="w-2.5 h-0.5 bg-slate-500"></span><span className="text-slate-400 uppercase">平均 ({activeMetricObj.thresholds[0]})</span></div>
-              <div className="flex items-center gap-1.5"><span className="w-2.5 h-0.5 bg-emerald-500"></span><span className="text-emerald-500 uppercase">オールスター級 ({activeMetricObj.thresholds[1]})</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2.5 h-0.5 bg-emerald-500"></span><span className="text-emerald-500 uppercase text-left">オールスター級 ({activeMetricObj.thresholds[1]})</span></div>
               <div className="flex items-center gap-1.5"><span className="w-2.5 h-0.5 bg-amber-500"></span><span className="text-amber-500 uppercase">MVP級 ({activeMetricObj.thresholds[2]})</span></div>
             </div>
             <div className="flex-grow w-full">
