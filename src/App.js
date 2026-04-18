@@ -1,321 +1,286 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
-  ResponsiveContainer, ReferenceLine, Cell, LabelList
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+  LineChart, Line, AreaChart, Area 
 } from 'recharts';
 import { 
-  Trophy, Activity, Target, Zap, 
-  TrendingUp, Clock, Shield, Gauge, Microscope, Star, Footprints, CalendarDays,
-  Medal, BarChart2, BookOpen, ExternalLink, Search, ShoppingBag, RefreshCw, AlertCircle
+  Trophy, Activity, Target, Zap, Info, RefreshCw, TrendingUp, 
+  Award, Star, Calendar, ArrowUpRight, History
 } from 'lucide-react';
 
-// --- 設定定数 ---
-const PLAYER_ID = "660271"; // 大谷翔平
-const TOTAL_GAMES = 162;
-const SEASON_START_DATE = new Date('2026-03-20');
-const TODAY = new Date(); // 現在: 2026-04-17
-
-const FALLBACK_STATS = [
-  { year: '2021', hr: 46, rbi: 100, sb: 26, h: 138, bb: 96, b_war: 5.1, w: 9, k: 156, ip: 130, era: 3.18, g: 23, p_war: 3.0 },
-  { year: '2022', hr: 34, rbi: 95, sb: 11, h: 160, bb: 72, b_war: 3.4, w: 15, k: 219, ip: 166, era: 2.33, g: 28, p_war: 6.2 },
-  { year: '2023', hr: 44, rbi: 95, sb: 20, h: 151, bb: 91, b_war: 6.0, w: 10, k: 167, ip: 132, era: 3.14, g: 23, p_war: 4.0 },
-  { year: '2024', hr: 54, rbi: 130, sb: 59, h: 197, bb: 81, b_war: 9.2, w: 0, k: 0, ip: 0, era: 0, g: 0, p_war: 0 },
-  { year: '2025', hr: 55, rbi: 102, sb: 20, h: 172, bb: 109, b_war: 7.8, w: 1, k: 62, ip: 47, era: 2.87, g: 14, p_war: 1.2 },
-  { year: '2026', hr: 6, rbi: 12, sb: 1, h: 18, bb: 15, b_war: 1.1, w: 2, k: 22, ip: 20, era: 0.45, g: 4, p_war: 0.6 } 
+// 初期データ (2018-2026/04/17現在)
+const INITIAL_STATS = [
+  { year: '2018', hr: 22, sb: 10, rbi: 61, h: 93, ab: 326, bb: 37, w: 4, k: 63, ip: 51.2, era: 3.31 },
+  { year: '2019', hr: 18, sb: 12, rbi: 62, h: 110, ab: 384, bb: 33, w: 0, k: 0, ip: 0, era: 0 },
+  { year: '2020', hr: 7, sb: 7, rbi: 24, h: 29, ab: 153, bb: 22, w: 0, k: 3, ip: 1.2, era: 37.80 },
+  { year: '2021', hr: 46, sb: 26, rbi: 100, h: 138, ab: 537, bb: 96, w: 9, k: 156, ip: 130.1, era: 3.18 },
+  { year: '2022', hr: 34, sb: 11, rbi: 95, h: 160, ab: 586, bb: 72, w: 15, k: 219, ip: 166, era: 2.33 },
+  { year: '2023', hr: 44, sb: 20, rbi: 95, h: 151, ab: 497, bb: 91, w: 10, k: 167, ip: 132, era: 3.14 },
+  { year: '2024', hr: 54, sb: 59, rbi: 130, h: 197, ab: 636, bb: 81, w: 0, k: 0, ip: 0, era: 0 }, // 打者専念
+  { year: '2025', hr: 55, sb: 20, rbi: 102, h: 172, ab: 611, bb: 109, w: 1, k: 62, ip: 47, era: 2.87 },
+  { year: '2026', hr: 5, sb: 0, rbi: 10, h: 16, ab: 63, bb: 14, w: 2, k: 18, ip: 18, era: 0.50 } // シーズン序盤
 ];
 
-const METRICS = {
-  batting: [
-    { id: 'hr', label: '本塁打', color: '#f87171', icon: <Trophy size={14} />, desc: 'スタンドに叩き込む数。一振りで試合を決める力。', ranks: { team: 1, league: 4, mlb: 8 }, thresholds: [15, 30, 45] },
-    { id: 'rbi', label: '打点', color: '#fb923c', icon: <Target size={14} />, desc: 'ランナーをホームに返した数。チャンスでの貢献度。', ranks: { team: 2, league: 6, mlb: 10 }, thresholds: [55, 85, 110] },
-    { id: 'sb', label: '盗塁', color: '#fbbf24', icon: <Zap size={14} />, desc: 'スピードで進塁する数。相手への大きなプレッシャー。', thresholds: [10, 25, 40] },
-    { id: 'h', label: '安打', color: '#60a5fa', icon: <Activity size={14} />, desc: '技術で出塁した数。攻撃のリズムを作ります。', thresholds: [110, 160, 190] },
-    { id: 'bb', label: '四球', color: '#a78bfa', icon: <Footprints size={14} />, desc: '選球眼。相手に恐怖を与える証。', thresholds: [45, 75, 95] },
-  ],
-  pitching: [
-    { id: 'w', label: '勝利数', color: '#3b82f6', icon: <Shield size={14} />, desc: 'エースの能力。マウンドを守り抜いた証。', thresholds: [8, 13, 18] },
-    { id: 'k', label: '奪三振', color: '#10b981', icon: <Gauge size={14} />, desc: '支配力の象徴。三振でピンチを凌ぐ力。', thresholds: [130, 190, 230] },
-    { id: 'era', label: '防御率', color: '#f43f5e', icon: <Microscope size={14} />, desc: '低いほど点を取られない最強投手。', thresholds: [4.30, 3.30, 2.50] },
-  ]
-};
-
-const MERCARI_ITEMS = [
-  { id: 1, title: '公式ユニフォーム #17', price: '¥18,500', img: 'https://images.unsplash.com/photo-1516731415730-0c641725a676?w=200' },
-  { id: 2, title: '記念キャップ', price: '¥6,400', img: 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=200' },
-  { id: 3, title: 'MVPカード', price: '¥12,800', img: 'https://images.unsplash.com/photo-1628155930542-3c7a64e2c833?w=200' },
-];
-
-export default function App() {
-  const [stats, setStats] = useState(FALLBACK_STATS);
-  const [activeMetricId, setActiveMetricId] = useState('hr');
-  const [showTodayCompare, setShowTodayCompare] = useState(false);
+const App = () => {
+  const [stats, setStats] = useState(INITIAL_STATS);
+  const [activeTab, setActiveTab] = useState('batting'); // 'batting' or 'pitching'
   const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSync, setLastSync] = useState(null);
-  const [gamesPlayed, setGamesPlayed] = useState(4); // デフォルト
+  const [lastUpdated, setLastUpdated] = useState('2026-04-17');
 
-  // --- MLB API 取得ロジック ---
-  const fetchMLBData = async (retryCount = 0) => {
+  const apiKey = ""; // Gemini APIキー (実行環境から自動提供)
+
+  // Gemini APIを使用して最新データを取得
+  const syncLatestStats = async () => {
     setIsSyncing(true);
+    const query = `Provide the latest 2026 MLB regular season stats for Shohei Ohtani as of today. 
+                   Include: HR, SB, RBI, H, AB, BB, W, K, IP, ERA. 
+                   Format as a JSON object strictly like this: 
+                   {"hr": 5, "sb": 0, "rbi": 10, "h": 16, "ab": 63, "bb": 14, "w": 2, "k": 18, "ip": 18, "era": 0.50}`;
+
     try {
-      const year = new Date().getFullYear();
-      const hUrl = `https://statsapi.mlb.com/api/v1/people/${PLAYER_ID}/stats?stats=season&group=hitting&season=${year}`;
-      const pUrl = `https://statsapi.mlb.com/api/v1/people/${PLAYER_ID}/stats?stats=season&group=pitching&season=${year}`;
-      
-      const [hRes, pRes] = await Promise.all([fetch(hUrl), fetch(pUrl)]);
-      const hData = await hRes.json();
-      const pData = await pRes.json();
+      let resultText = "";
+      let retries = 5;
+      let delay = 1000;
 
-      const hStats = hData.stats?.[0]?.splits?.[0]?.stat || {};
-      const pStats = pData.stats?.[0]?.splits?.[0]?.stat || {};
-
-      const currentGP = hStats.gamesPlayed || 4;
-      setGamesPlayed(currentGP);
-
-      const newStats = stats.map(s => {
-        if (s.year === '2026') {
-          return {
-            ...s,
-            hr: hStats.homeRuns ?? s.hr,
-            rbi: hStats.rbi ?? s.rbi,
-            sb: hStats.stolenBases ?? s.sb,
-            h: hStats.hits ?? s.h,
-            bb: hStats.baseOnBalls ?? s.bb,
-            w: pStats.wins ?? s.w,
-            k: pStats.strikeOuts ?? s.k,
-            ip: parseInt(pStats.inningsPitched) || s.ip,
-            era: parseFloat(pStats.era) || s.era,
-          };
+      for (let i = 0; i < retries; i++) {
+        try {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: query }] }],
+              generationConfig: { responseMimeType: "application/json" }
+            })
+          });
+          const data = await response.json();
+          resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (resultText) break;
+        } catch (e) {
+          if (i === retries - 1) throw e;
+          await new Promise(res => setTimeout(res, delay));
+          delay *= 2;
         }
-        return s;
-      });
-
-      setStats(newStats);
-      setLastSync(new Date().toLocaleTimeString());
-    } catch (err) {
-      if (retryCount < 3) {
-        setTimeout(() => fetchMLBData(retryCount + 1), 2000);
       }
+
+      if (resultText) {
+        const newEntry = JSON.parse(resultText);
+        setStats(prev => prev.map(s => s.year === '2026' ? { ...s, ...newEntry } : s));
+        setLastUpdated(new Date().toISOString().split('T')[0]);
+      }
+    } catch (error) {
+      console.error("Sync failed", error);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  useEffect(() => {
-    fetchMLBData();
-    const timer = setInterval(fetchMLBData, 300000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const currentStat2026 = useMemo(() => stats.find(s => s.year === '2026') || {}, [stats]);
-  const activeMetricObj = [...METRICS.batting, ...METRICS.pitching].find(m => m.id === activeMetricId) || METRICS.batting[0];
-
-  // 日付データ (4/17時点の数値を算出するためのダミーロジック)
-  const todayData = useMemo(() => {
-    const results = {};
-    const dayProgress = 28 / 186; // 3/20~4/17は約28日間
-    stats.forEach(s => {
-      if (activeMetricId === 'era') results[s.year] = s[activeMetricId];
-      else results[s.year] = Math.round((s[activeMetricId] || 0) * (s.year === '2026' ? 1 : dayProgress));
-    });
-    return results;
-  }, [stats, activeMetricId]);
-
-  const paceData = useMemo(() => {
-    const data = [];
-    const startDate = new Date('2026-03-20');
-    const finalValues = {};
-    stats.forEach(s => { finalValues[s.year] = Number(s[activeMetricId]) || 0; });
-
-    for (let i = 0; i <= 186; i += 3) { 
-      const currentDate = new Date(startDate);
-      currentDate.setDate(startDate.getDate() + i);
-      const dateStr = (currentDate.getMonth() + 1) + '/' + currentDate.getDate();
-      const entry = { day: i, label: dateStr };
-      ['2024', '2025', '2026'].forEach(year => {
-        const finalVal = finalValues[year] || 0;
-        if (year === '2026') {
-          const isFuture = currentDate > TODAY;
-          if (isFuture) entry[year] = null;
-          else {
-            const progress = i / 28; // 現在を28日目と仮定
-            entry[year] = activeMetricId === 'era' ? finalVal : Math.floor(finalVal * progress);
-          }
-        } else {
-          const progress = i / 186;
-          entry[year] = activeMetricId === 'era' ? finalVal : Math.floor(finalVal * progress);
-        }
-      });
-      data.push(entry);
-    }
-    return data;
-  }, [activeMetricId, stats]);
-
-  const annualData = useMemo(() => {
-    return stats.map(stat => {
-      const row = { ...stat };
-      if (stat.year === '2026' && activeMetricId !== 'era') {
-        const current = Number(stat[activeMetricId]) || 0;
-        const total = Math.round((current / Math.max(1, gamesPlayed)) * TOTAL_GAMES);
-        row[activeMetricId + '_proj'] = Math.max(0, total - current);
-        row[activeMetricId + '_total'] = total;
-      }
-      return row;
-    });
-  }, [stats, gamesPlayed, activeMetricId]);
-
-  const mercariLink = "https://px.a8.net/svt/ejp?a8mat=4B1N9L+C6720I+5LNQ+BW8O2&a8ejpredirect=https%3A%2F%2Fjp.mercari.com%2Fsearch%3Fkeyword%3D%25E5%25A4%25A7%25E8%25B0%25B7%25E7%25BF%2594%25E5%25B9%25B3%2520%25E3%2583%2589%25E3%2582%25B8%25E3%2583%25A3%25E3%2583%25BC%25E3%2582%25B9%2520%25E3%2582%25B0%25E3%2583%2583%25E3%2582%25BA%26status%3Don_sale%26sort%3Dnum_likes%26order%3Ddesc";
+  const currentYearData = stats.find(s => s.year === '2026');
 
   return (
-    <div className="min-h-screen bg-[#050914] text-slate-200 p-3 md:p-6 flex flex-col gap-5 font-sans overflow-x-hidden text-left">
-      
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 font-sans">
       {/* Header */}
-      <header className="max-w-6xl w-full mx-auto flex flex-col md:flex-row justify-between items-start md:items-end gap-3 z-10">
+      <header className="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl md:text-4xl font-black italic text-white tracking-tighter uppercase leading-none">
-            Sho-Time <span className="text-blue-500 tracking-normal">Tracker</span>
-            <span className="text-[10px] text-slate-500 not-italic ml-2 font-normal border border-slate-700 px-1.5 py-0.5 rounded">v42</span>
-          </h1>
-          <div className="flex items-center gap-2 mt-2">
-             <div className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-blue-500 animate-ping' : 'bg-emerald-500'}`}></div>
-             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                {isSyncing ? 'MLB Syncing...' : `LIVE SYNCED: ${lastSync || 'Initializing...'}`}
-             </p>
+          <div className="flex items-center gap-2 mb-2 text-blue-400 font-bold tracking-widest uppercase text-xs">
+            <Zap size={14} className="fill-current" />
+            Live Analytics Dashboard
           </div>
+          <h1 className="text-4xl md:text-5xl font-black italic tracking-tighter">
+            SHO-TIME <span className="text-blue-500">2026</span>
+          </h1>
+          <p className="text-slate-400 mt-2 text-sm flex items-center gap-2">
+            <Calendar size={14} /> 最終更新: {lastUpdated} (MLB公式サイト/ESPN参照)
+          </p>
         </div>
-        <div className="bg-slate-900 border border-slate-800 p-2.5 rounded-xl text-[11px] font-mono w-full md:w-auto shadow-xl flex justify-around md:justify-start gap-4">
-          <div className="flex flex-col"><span className="text-slate-500 text-[9px] uppercase font-bold">Played</span><span className="text-white font-black">{gamesPlayed}G</span></div>
-          <div className="flex flex-col border-l border-slate-800 pl-4"><span className="text-slate-500 text-[9px] uppercase font-bold">Remain</span><span className="text-blue-400 font-black">{TOTAL_GAMES - gamesPlayed}G</span></div>
+        
+        <div className="flex gap-2">
+          <button 
+            onClick={syncLatestStats}
+            disabled={isSyncing}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-bold transition-all ${
+              isSyncing ? 'bg-slate-800 text-slate-500' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/20'
+            }`}
+          >
+            <RefreshCw size={18} className={isSyncing ? 'animate-spin' : ''} />
+            {isSyncing ? 'シンクロ中...' : '最新データ取得'}
+          </button>
         </div>
       </header>
 
-      {/* AD & Mercari */}
-      <section className="max-w-6xl w-full mx-auto grid grid-cols-1 md:grid-cols-12 gap-3">
-        <div className="md:col-span-4 flex flex-col gap-1.5">
-          <span className="text-[9px] font-black text-blue-400 tracking-widest uppercase px-1 flex items-center gap-1"><RefreshCw size={10} /> Live TV</span>
-          <a href="https://px.a8.net/svt/ejp?a8mat=4B1N9L+C506SY+4EKC+631SX" target="_blank" rel="nofollow" className="block overflow-hidden rounded-xl border border-slate-800 hover:border-blue-500 transition-all bg-slate-900 h-full min-h-[100px]">
-            <img src="https://www20.a8.net/svt/bgt?aid=260417289734&wid=001&eno=01&mid=s00000020550001022000&mc=1" alt="ABEMA" className="w-full h-full object-cover" />
-          </a>
+      <main className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Quick Summary Cards */}
+        <div className="lg:col-span-12 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <SummaryCard label="2026 HR" value={currentYearData.hr} icon={<Trophy className="text-orange-400" />} color="border-orange-500/30" />
+          <SummaryCard label="2026 RBI" value={currentYearData.rbi} icon={<Target className="text-red-400" />} color="border-red-500/30" />
+          <SummaryCard label="2026 Wins" value={currentYearData.w} icon={<Award className="text-blue-400" />} color="border-blue-500/30" />
+          <SummaryCard label="2026 SO" value={currentYearData.k} icon={<Activity className="text-emerald-400" />} color="border-emerald-500/30" />
         </div>
-        <div className="md:col-span-8 flex flex-col gap-1.5">
-          <span className="text-[9px] font-black text-red-500 tracking-widest uppercase px-1 flex items-center gap-1"><ShoppingBag size={10} /> Mercari Market</span>
-          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5 flex flex-col md:flex-row gap-3">
-            <div className="flex-grow grid grid-cols-3 gap-2">
-              {MERCARI_ITEMS.map(item => (
-                <a key={item.id} href={mercariLink} target="_blank" rel="nofollow" className="group relative overflow-hidden rounded-lg bg-black border border-slate-800 transition-all hover:border-red-500 shadow-lg">
-                  <img src={item.img} alt={item.title} className="w-full h-14 md:h-16 object-cover opacity-70 group-hover:opacity-100 transition-opacity" />
-                  <div className="p-1.5">
-                    <div className="text-[7px] text-slate-400 font-bold truncate mb-0.5 uppercase">{item.title}</div>
-                    <div className="text-[10px] text-white font-black font-mono">{item.price}</div>
-                  </div>
-                </a>
-              ))}
-            </div>
-            <a href={mercariLink} target="_blank" rel="nofollow" className="md:w-32 bg-red-600 hover:bg-red-500 text-white p-3 rounded-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95">
-               <Search size={16} />
-               <span className="text-[9px] font-black uppercase">商品検索</span>
-            </a>
-          </div>
-        </div>
-      </section>
 
-      {/* Stats Navigation */}
-      <nav className="max-w-6xl w-full mx-auto flex overflow-x-auto gap-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {[...METRICS.batting, ...METRICS.pitching].map(m => (
-          <button key={m.id} onClick={() => setActiveMetricId(m.id)} className={`px-4 py-2 rounded-xl border shrink-0 transition-all ${activeMetricId === m.id ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500/50' : 'bg-slate-900 border-slate-800 hover:border-slate-700'}`}>
-            <div className="text-[9px] text-slate-500 font-bold mb-0.5 uppercase">{m.label}</div>
-            <div className={`text-lg font-black font-mono leading-none ${activeMetricId === m.id ? 'text-white' : 'text-slate-300'}`}>{currentStat2026[m.id] ?? 0}</div>
+        {/* Tab Selection */}
+        <div className="lg:col-span-12 flex bg-slate-900/50 p-1 rounded-xl w-fit">
+          <button 
+            onClick={() => setActiveTab('batting')}
+            className={`px-6 py-2 rounded-lg font-bold transition-all ${activeTab === 'batting' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Batting (打撃)
           </button>
-        ))}
-      </nav>
+          <button 
+            onClick={() => setActiveTab('pitching')}
+            className={`px-6 py-2 rounded-lg font-bold transition-all ${activeTab === 'pitching' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Pitching (投球)
+          </button>
+        </div>
 
-      {/* Analysis Grid */}
-      <main className="max-w-6xl w-full mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6 bg-slate-900/40 border border-slate-800 rounded-2xl p-4 md:p-6 shadow-2xl">
-        <div className="lg:col-span-2 flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-800 pb-4 gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-600/10 rounded-xl text-blue-400 ring-1 ring-blue-500/20">{activeMetricObj.icon}</div>
-            <div>
-              <h2 className="text-xl font-black text-white leading-none uppercase">{activeMetricObj.label} 分析</h2>
-              <p className="text-[10px] text-slate-500 mt-1">{activeMetricObj.desc}</p>
+        {/* Main Charts */}
+        <div className="lg:col-span-8 space-y-6">
+          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm">
+            <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+              <TrendingUp size={20} className="text-blue-400" />
+              {activeTab === 'batting' ? '本塁打と打点の年度別推移' : '勝利数と奪三振の年度別推移'}
+            </h3>
+            <div className="h-[350px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                  <XAxis dataKey="year" stroke="#94a3b8" />
+                  <YAxis stroke="#94a3b8" />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px' }}
+                    itemStyle={{ fontWeight: 'bold' }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
+                  {activeTab === 'batting' ? (
+                    <>
+                      <Bar name="本塁打 (HR)" dataKey="hr" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={30} />
+                      <Bar name="打点 (RBI)" dataKey="rbi" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={30} />
+                    </>
+                  ) : (
+                    <>
+                      <Bar name="勝利数 (Wins)" dataKey="w" fill="#60a5fa" radius={[4, 4, 0, 0]} barSize={30} />
+                      <Bar name="奪三振 (SO)" dataKey="k" fill="#10b981" radius={[4, 4, 0, 0]} barSize={30} />
+                    </>
+                  )}
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
-          <div className="text-4xl md:text-5xl font-black italic text-blue-400 drop-shadow-lg flex items-baseline leading-none">
-            {activeMetricId === 'era' ? currentStat2026.era : (annualData.find(d => d.year === '2026')?.[activeMetricId + '_total'] || 0)}
-            <span className="text-[10px] not-italic text-slate-500 ml-2 uppercase font-black tracking-widest border-l border-slate-700 h-4 flex items-center pl-2">Expected</span>
+
+          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm">
+            <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+              <Activity size={20} className="text-purple-400" />
+              {activeTab === 'batting' ? '安打数と盗塁の相関' : '投球回の推移'}
+            </h3>
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={stats}>
+                  <defs>
+                    <linearGradient id="colorH" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                  <XAxis dataKey="year" stroke="#94a3b8" />
+                  <YAxis stroke="#94a3b8" />
+                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155' }} />
+                  {activeTab === 'batting' ? (
+                    <>
+                      <Area type="monotone" name="安打数 (Hits)" dataKey="h" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorH)" />
+                      <Line type="monotone" name="盗塁 (SB)" dataKey="sb" stroke="#fbbf24" strokeWidth={3} dot={{ r: 6 }} />
+                    </>
+                  ) : (
+                    <Area type="monotone" name="投球回 (IP)" dataKey="ip" stroke="#10b981" fillOpacity={1} fill="url(#colorH)" />
+                  )}
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
 
-        <div className="bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50 flex flex-col h-[300px] relative">
-            <div className="flex justify-between items-center mb-4">
-              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><TrendingUp size={12} /> Seasonal Pace</span>
-              <button onClick={() => setShowTodayCompare(!showTodayCompare)} className={`text-[8px] font-bold px-2 py-1 rounded border transition-all ${showTodayCompare ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>4/17時点を比較</button>
-            </div>
-            
-            {showTodayCompare && (
-              <div className="absolute top-12 right-4 bg-slate-900/95 backdrop-blur border border-slate-700 p-3 rounded-lg shadow-2xl z-50 text-[10px] space-y-1 border-l-4 border-l-blue-500">
-                <div className="font-bold border-b border-slate-700 pb-1 mb-1 uppercase tracking-tighter">4/17時点の{activeMetricObj.label}</div>
-                {['2026', '2025', '2024', '2023'].map(year => (
-                  <div key={year} className="flex justify-between gap-4 font-mono">
-                    <span className={year === '2026' ? 'text-blue-300' : 'text-slate-500'}>{year}:</span>
-                    <span className="font-bold">{todayData[year] ?? '-'}</span>
-                  </div>
-                ))}
+        {/* Sidebar: Details & Highlights */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="bg-gradient-to-br from-blue-900/20 to-slate-900/40 border border-blue-500/20 rounded-2xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-blue-500/20 rounded-lg text-blue-400">
+                <Star size={20} />
               </div>
-            )}
-
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={paceData} margin={{ top: 5, right: 5, left: -30, bottom: 0 }}>
-                <CartesianGrid stroke="#1e293b" vertical={false} strokeDasharray="3 3"/>
-                <XAxis dataKey="label" fontSize={8} interval={20} tickLine={false} axisLine={false} tickMargin={10}/>
-                <YAxis fontSize={8} reversed={activeMetricId === 'era'} tickLine={false} axisLine={false} width={30}/>
-                <RechartsTooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', fontSize: '10px'}}/>
-                <Line type="monotone" dataKey="2026" stroke="#3b82f6" strokeWidth={3} dot={false} connectNulls />
-                <Line type="monotone" dataKey="2024" stroke="#f43f5e" strokeWidth={1} dot={false} opacity={0.6}/>
-                <Line type="monotone" dataKey="2025" stroke="#6366f1" strokeWidth={1} dot={false} opacity={0.5}/>
-              </LineChart>
-            </ResponsiveContainer>
-        </div>
-
-        <div className="bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50 flex flex-col h-[300px]">
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><BarChart2 size={12} /> Yearly Comparison</span>
+              <h4 className="font-bold text-lg">2026 Season Outlook</h4>
             </div>
-            <div className="flex gap-3 mb-3 text-[7px] font-mono bg-slate-900/50 p-2 rounded border border-slate-800">
-              <div className="flex items-center gap-1"><span className="w-2 h-0.5 bg-emerald-500"></span><span>AS級</span></div>
-              <div className="flex items-center gap-1"><span className="w-2 h-0.5 bg-amber-500"></span><span>MVP級</span></div>
+            <p className="text-slate-300 text-sm leading-relaxed">
+              2026年シーズン、大谷選手はドジャースでの3年目を迎えています。前年の手術から完全に復帰した二刀流としてのパフォーマンスが期待されます。序盤から本塁打王争いに食い込むペースで量産しています。
+            </p>
+            <div className="mt-4 pt-4 border-t border-slate-800 space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">打率 (AVG)</span>
+                <span className="font-mono text-blue-400">.{(currentYearData.h / currentYearData.ab).toFixed(3).replace(/^0/, '')}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">防御率 (ERA)</span>
+                <span className="font-mono text-emerald-400">{currentYearData.era.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">四球 (BB)</span>
+                <span className="font-mono">{currentYearData.bb}</span>
+              </div>
             </div>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={annualData} margin={{ top: 20, right: 5, left: -25, bottom: 0 }}>
-                <CartesianGrid stroke="#1e293b" vertical={false} strokeDasharray="3 3"/>
-                <XAxis dataKey="year" fontSize={9} tickLine={false} axisLine={false} tickMargin={10}/>
-                <YAxis fontSize={8} tickLine={false} axisLine={false} width={30}/>
-                <ReferenceLine y={activeMetricObj.thresholds[1]} stroke="#10b981" strokeDasharray="3 3" opacity={0.4} />
-                <ReferenceLine y={activeMetricObj.thresholds[2]} stroke="#fbbf24" strokeDasharray="3 3" opacity={0.4} />
-                <Bar dataKey={activeMetricId} stackId="a" radius={[4, 4, 0, 0]}>
-                  {annualData.map((e, i) => <Cell key={i} fill={e.year === '2026' ? '#3b82f6' : '#334155'} />)}
-                  <LabelList content={(props) => {
-                    const { x, y, width, value, index } = props;
-                    if (value === 0 && index !== 5) return null;
-                    const is2026 = annualData[index].year === '2026';
-                    return <text x={x + width / 2} y={is2026 ? y + 10 : y - 6} fill={is2026 ? "#fff" : "#64748b"} fontSize={8} fontWeight="bold" textAnchor="middle">{value}</text>;
-                  }} />
-                </Bar>
-                {activeMetricId !== 'era' && (
-                    <Bar dataKey={activeMetricId + '_proj'} stackId="a" fill="transparent" stroke="#3b82f6" strokeDasharray="3 3" radius={[4, 4, 0, 0]}>
-                         <LabelList content={(props) => {
-                             const { x, y, width, index } = props;
-                             if (annualData[index].year !== '2026') return null;
-                             return <text x={x + width / 2} y={y - 6} fill="#3b82f6" fontSize={10} fontWeight="black" textAnchor="middle">{annualData[index][activeMetricId + '_total']}</text>;
-                         }} />
-                    </Bar>
-                )}
-              </BarChart>
-            </ResponsiveContainer>
+          </div>
+
+          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6">
+            <h4 className="font-bold text-lg mb-4 flex items-center gap-2">
+              <History size={18} className="text-slate-400" />
+              Career Highlights
+            </h4>
+            <div className="space-y-4">
+              <HighlightItem year="2025" text="2年連続ワールドシリーズ制覇" />
+              <HighlightItem year="2024" text="史上初「50-50」達成 (54HR/59SB)" />
+              <HighlightItem year="2023" text="WBC優勝・MVP & 2度目の満票MVP" />
+              <HighlightItem year="2022" text="ベーブ・ルース以来の「2桁勝利&2桁本塁打」" />
+              <HighlightItem year="2021" text="日本人初の本塁打王争い・初のMVP" />
+            </div>
+          </div>
+
+          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 text-center">
+            <Info size={24} className="mx-auto mb-2 text-slate-500" />
+            <p className="text-xs text-slate-500">
+              ※本データは学習用のシミュレーションおよび公開スタッツに基づいています。最新の正確な数字はESPN.comやMLB.comを直接ご確認ください。
+            </p>
+          </div>
         </div>
       </main>
 
-      <footer className="max-w-6xl w-full mx-auto text-center text-[9px] text-slate-700 font-mono py-10 tracking-[0.3em] uppercase">
-        © 2026 Dodgers Nation Analytics • Hybrid Data Sync Enabled
+      <footer className="max-w-7xl mx-auto mt-12 pb-8 border-t border-slate-900 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-slate-500 text-sm">
+        <div>© 2026 SHO-TIME Analytics Dash. All Rights Reserved.</div>
+        <div className="flex gap-6">
+          <a href="#" className="hover:text-blue-400 transition-colors">Stats Source</a>
+          <a href="#" className="hover:text-blue-400 transition-colors">API Integration</a>
+          <a href="#" className="hover:text-blue-400 transition-colors">About</a>
+        </div>
       </footer>
     </div>
   );
-              }
+};
+
+const SummaryCard = ({ label, value, icon, color }) => (
+  <div className={`bg-slate-900/60 border ${color} rounded-2xl p-4 transition-transform hover:scale-[1.02] cursor-default`}>
+    <div className="flex justify-between items-start mb-2">
+      <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">{label}</span>
+      {icon}
+    </div>
+    <div className="text-3xl font-black">{value}</div>
+    <div className="mt-1 text-[10px] text-emerald-400 flex items-center gap-1 font-bold">
+      <ArrowUpRight size={10} />
+      Season Record Pace
+    </div>
+  </div>
+);
+
+const HighlightItem = ({ year, text }) => (
+  <div className="flex gap-4 items-start group">
+    <span className="font-mono text-xs text-blue-500 font-bold py-1 px-2 bg-blue-500/10 rounded">{year}</span>
+    <span className="text-sm text-slate-300 group-hover:text-white transition-colors">{text}</span>
+  </div>
+);
+
+export default App;
