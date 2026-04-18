@@ -5,14 +5,13 @@ import {
 } from 'recharts';
 import { 
   Trophy, Activity, Target, Zap, 
-  TrendingUp, Clock, Shield, Gauge, Microscope, Star, Footprints, CalendarDays,
+  TrendingUp, Shield, Gauge, Microscope, Star, Footprints, CalendarDays,
   BarChart2, ShoppingBag, Layers, Percent
 } from 'lucide-react';
 
 // --- 設定 ---
 const PLAYER_ID = "660271";
 const TOTAL_GAMES = 162;
-const TODAY = new Date(); // 2026-04-17想定
 
 const FALLBACK_STATS = [
   { year: '2021', avg: .257, slg: .592, ops: .965, hr: 46, rbi: 100, sb: 26, h: 138, bb: 96, pa: 639, b_war: 5.1, w: 9, k: 156, era: 3.18, g: 23, p_war: 3.0 },
@@ -45,55 +44,162 @@ const METRICS = {
   ]
 };
 
+// --- Baseball Savant風 リアル推移シミュレーター (2025年等、実データがない過去年用) ---
+const generateRealisticLogs = (stat) => {
+  const pa = stat.pa || 0; const hr = stat.hr || 0; const bb = stat.bb || 0; const h = stat.h || 0;
+  const remainingH = Math.max(0, h - hr); const outs = Math.max(0, pa - hr - remainingH - bb);
+  const pool = [];
+  for(let i=0; i<hr; i++) pool.push({ type: 'HR' });
+  for(let i=0; i<remainingH; i++) pool.push({ type: 'H' });
+  for(let i=0; i<bb; i++) pool.push({ type: 'BB' });
+  for(let i=0; i<outs; i++) pool.push({ type: 'OUT' });
+
+  const targetTB = Math.round((stat.slg || 0) * (pa - bb));
+  let currentTB = hr * 4 + remainingH;
+  const hEvents = pool.filter(e => e.type === 'H');
+  while(currentTB < targetTB && hEvents.length > 0) {
+      const ev = hEvents[Math.floor(Math.random() * hEvents.length)];
+      if (!ev.tb) ev.tb = 1;
+      if (ev.tb < 3) { ev.tb++; currentTB++; }
+  }
+  hEvents.forEach(e => { if(!e.tb) e.tb = 1; });
+  pool.sort(() => Math.random() - 0.5);
+
+  let hLogs = []; let pIdx = 0; let cum = { hr:0, rbi:0, sb:0, h:0, bb:0, pa:0, ab:0, tb:0 };
+  for(let g=1; g<=162; g++) {
+      const gamePA = Math.min(Math.floor(Math.random() * 3) + 3, pool.length - pIdx);
+      for(let i=0; i<gamePA; i++) {
+          const ev = pool[pIdx++]; if (!ev) break;
+          cum.pa++;
+          if (ev.type === 'HR') { cum.hr++; cum.h++; cum.ab++; cum.tb+=4; cum.rbi += Math.floor(Math.random()*3)+1; }
+          else if (ev.type === 'H') { cum.h++; cum.ab++; cum.tb+=ev.tb; cum.rbi += Math.random()<0.2?1:0; }
+          else if (ev.type === 'BB') { cum.bb++; }
+          else if (ev.type === 'OUT') { cum.ab++; }
+      }
+      cum.sb += Math.random() < ((stat.sb||0)/162) ? 1 : 0;
+      const avg = cum.ab > 0 ? cum.h / cum.ab : 0;
+      const obp = cum.pa > 0 ? (cum.h + cum.bb) / cum.pa : 0;
+      const slg = cum.ab > 0 ? cum.tb / cum.ab : 0;
+      const b_war = stat.pa > 0 ? (cum.pa / stat.pa) * (stat.b_war||0) : 0;
+      hLogs.push({ game: g, avg, slg, ops: obp+slg, hr: cum.hr, rbi: cum.rbi, sb: cum.sb, h: cum.h, bb: cum.bb, pa: cum.pa, b_war });
+  }
+
+  let pLogs = []; let cumP = { w:0, k:0, er:0, outs:0 };
+  const p_g = stat.g || 0; const interval = p_g > 0 ? Math.floor(162 / p_g) : 162;
+  const targetOuts = p_g * 18;
+  for(let g=1; g<=162; g++) {
+      if (p_g > 0 && g % interval === 0 && (g / interval) <= p_g) {
+          cumP.outs += 18; cumP.k += Math.round((stat.k||0) / p_g);
+          cumP.w += Math.random() < ((stat.w||0)/p_g) ? 1 : 0;
+          cumP.er += Math.round(((stat.era||0) * 18) / 27);
+      }
+      const p_war = targetOuts > 0 ? (cumP.outs / targetOuts) * (stat.p_war||0) : 0;
+      pLogs.push({ game: g, w: cumP.w, k: cumP.k, era: cumP.outs > 0 ? (cumP.er * 27) / cumP.outs : 0, p_war });
+  }
+  return { hitting: hLogs, pitching: pLogs };
+};
+
+// --- MLB APIの実データ GameLog パース処理 ---
+const processRealGameLogs = (splits, group, refStat) => {
+  if (!splits || splits.length === 0) return [];
+  const sorted = [...splits].reverse(); // 古い順から累積
+  let cum = { hr:0, rbi:0, sb:0, h:0, bb:0, pa:0, ab:0, tb:0, hbp:0, sf:0, w:0, k:0, er:0, outs:0, g:0 };
+  
+  return sorted.map((log, i) => {
+      const s = log.stat;
+      cum.g += 1;
+      if (group === 'hitting') {
+          cum.hr += s.homeRuns || 0; cum.rbi += s.rbi || 0; cum.sb += s.stolenBases || 0;
+          cum.h += s.hits || 0; cum.bb += s.baseOnBalls || 0; cum.pa += s.plateAppearances || 0;
+          cum.ab += s.atBats || 0; cum.tb += s.totalBases || 0; cum.hbp += s.hitByPitch || 0; cum.sf += s.sacrificeFlies || 0;
+          const avg = cum.ab > 0 ? cum.h / cum.ab : 0;
+          const obp = (cum.ab + cum.bb + cum.hbp + cum.sf) > 0 ? (cum.h + cum.bb + cum.hbp) / (cum.ab + cum.bb + cum.hbp + cum.sf) : 0;
+          const slg = cum.ab > 0 ? cum.tb / cum.ab : 0;
+          const b_war = refStat?.pa > 0 ? (cum.pa / refStat.pa) * (refStat.b_war||0) : 0; // WARは打席数でスケール
+          return { game: i + 1, hr: cum.hr, rbi: cum.rbi, sb: cum.sb, h: cum.h, bb: cum.bb, pa: cum.pa, avg, slg, ops: obp + slg, b_war };
+      } else {
+          cum.w += s.wins || 0; cum.k += s.strikeOuts || 0; cum.er += s.earnedRuns || 0;
+          if (s.inningsPitched) {
+              const [f, p] = s.inningsPitched.split('.');
+              cum.outs += parseInt(f || 0) * 3 + parseInt(p || 0);
+          }
+          const era = cum.outs > 0 ? (cum.er * 27) / cum.outs : 0;
+          const p_war = refStat?.p_g > 0 ? (cum.g / refStat.p_g) * (refStat.p_war||0) : 0;
+          return { game: i + 1, w: cum.w, k: cum.k, era, p_war };
+      }
+  });
+};
+
+// 2025年のシミュレーションデータを初期化
+const SIMULATED_LOGS_2025 = generateRealisticLogs(FALLBACK_STATS.find(s=>s.year==='2025'));
+
 export default function App() {
   const [stats, setStats] = useState(FALLBACK_STATS);
+  const [realLogs, setRealLogs] = useState({ 2024: { hitting: [], pitching: [] }, 2026: { hitting: [], pitching: [] } });
   const [activeMetricId, setActiveMetricId] = useState('avg');
   const [showTodayCompare, setShowTodayCompare] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const [gamesPlayed, setGamesPlayed] = useState(18);
 
-  // --- API Fetch ---
+  // --- API Fetch: Season Stats & GameLogs ---
   const fetchMLBData = async (retryCount = 0) => {
     setIsSyncing(true);
     try {
-      const year = new Date().getFullYear();
-      const hUrl = `https://statsapi.mlb.com/api/v1/people/${PLAYER_ID}/stats?stats=season&group=hitting&season=${year}`;
-      const pUrl = `https://statsapi.mlb.com/api/v1/people/${PLAYER_ID}/stats?stats=season&group=pitching&season=${year}`;
+      const yearStr = new Date().getFullYear().toString();
       
-      const [hRes, pRes] = await Promise.all([fetch(hUrl), fetch(pUrl)]);
-      const hData = await hRes.json();
-      const pData = await pRes.json();
+      const reqs = [
+        fetch(`https://statsapi.mlb.com/api/v1/people/${PLAYER_ID}/stats?stats=season&group=hitting&season=${yearStr}`),
+        fetch(`https://statsapi.mlb.com/api/v1/people/${PLAYER_ID}/stats?stats=season&group=pitching&season=${yearStr}`),
+        fetch(`https://statsapi.mlb.com/api/v1/people/${PLAYER_ID}/stats?stats=gameLog&group=hitting&season=2024`),
+        fetch(`https://statsapi.mlb.com/api/v1/people/${PLAYER_ID}/stats?stats=gameLog&group=pitching&season=2024`),
+        fetch(`https://statsapi.mlb.com/api/v1/people/${PLAYER_ID}/stats?stats=gameLog&group=hitting&season=${yearStr}`),
+        fetch(`https://statsapi.mlb.com/api/v1/people/${PLAYER_ID}/stats?stats=gameLog&group=pitching&season=${yearStr}`)
+      ];
+      
+      const res = await Promise.all(reqs);
+      const data = await Promise.all(res.map(r => r.json()));
 
-      const hStats = hData.stats?.[0]?.splits?.[0]?.stat || {};
-      const pStats = pData.stats?.[0]?.splits?.[0]?.stat || {};
-
+      const hStats = data[0].stats?.[0]?.splits?.[0]?.stat || {};
+      const pStats = data[1].stats?.[0]?.splits?.[0]?.stat || {};
+      
       if (hStats.gamesPlayed) setGamesPlayed(hStats.gamesPlayed);
 
-      setStats(prev => prev.map(s => {
-        if (s.year === '2026') {
-          return {
-            ...s,
-            avg: parseFloat(hStats.avg) || s.avg,
-            slg: parseFloat(hStats.slg) || s.slg,
-            ops: parseFloat(hStats.ops) || s.ops,
-            hr: hStats.homeRuns ?? s.hr,
-            rbi: hStats.rbi ?? s.rbi,
-            sb: hStats.stolenBases ?? s.sb,
-            h: hStats.hits ?? s.h,
-            bb: hStats.baseOnBalls ?? s.bb,
-            pa: hStats.plateAppearances ?? s.pa,
-            w: pStats.wins ?? s.w,
-            k: pStats.strikeOuts ?? s.k,
-            era: parseFloat(pStats.era) || s.era,
-            g: pStats.gamesPlayed ?? s.g,
-          };
+      const currentStatsObj = {
+          avg: parseFloat(hStats.avg) || FALLBACK_STATS[5].avg,
+          slg: parseFloat(hStats.slg) || FALLBACK_STATS[5].slg,
+          ops: parseFloat(hStats.ops) || FALLBACK_STATS[5].ops,
+          hr: hStats.homeRuns ?? FALLBACK_STATS[5].hr,
+          rbi: hStats.rbi ?? FALLBACK_STATS[5].rbi,
+          sb: hStats.stolenBases ?? FALLBACK_STATS[5].sb,
+          h: hStats.hits ?? FALLBACK_STATS[5].h,
+          bb: hStats.baseOnBalls ?? FALLBACK_STATS[5].bb,
+          pa: hStats.plateAppearances ?? FALLBACK_STATS[5].pa,
+          w: pStats.wins ?? FALLBACK_STATS[5].w,
+          k: pStats.strikeOuts ?? FALLBACK_STATS[5].k,
+          era: parseFloat(pStats.era) || FALLBACK_STATS[5].era,
+          g: hStats.gamesPlayed ?? FALLBACK_STATS[5].g,
+          p_g: pStats.gamesPlayed ?? FALLBACK_STATS[5].g,
+          b_war: FALLBACK_STATS[5].b_war, p_war: FALLBACK_STATS[5].p_war
+      };
+
+      setStats(prev => prev.map(s => s.year === '2026' ? { ...s, ...currentStatsObj } : s));
+
+      // GameLog パース
+      setRealLogs({
+        2024: {
+           hitting: processRealGameLogs(data[2].stats?.[0]?.splits, 'hitting', FALLBACK_STATS.find(s=>s.year==='2024')),
+           pitching: processRealGameLogs(data[3].stats?.[0]?.splits, 'pitching', FALLBACK_STATS.find(s=>s.year==='2024'))
+        },
+        2026: {
+           hitting: processRealGameLogs(data[4].stats?.[0]?.splits, 'hitting', currentStatsObj),
+           pitching: processRealGameLogs(data[5].stats?.[0]?.splits, 'pitching', currentStatsObj)
         }
-        return s;
-      }));
+      });
+
       setLastSync(new Date().toLocaleTimeString());
     } catch (e) {
-      if (retryCount < 5) setTimeout(() => fetchMLBData(retryCount + 1), 1000);
+      if (retryCount < 3) setTimeout(() => fetchMLBData(retryCount + 1), 1000);
     } finally {
       setIsSyncing(false);
     }
@@ -107,39 +213,40 @@ export default function App() {
 
   const currentStat2026 = useMemo(() => stats.find(s => s.year === '2026') || {}, [stats]);
   const activeMetricObj = [...METRICS.batting, ...METRICS.pitching].find(m => m.id === activeMetricId) || METRICS.batting[0];
+  const isRateMetric = (id) => ['avg', 'slg', 'ops', 'era'].includes(id);
 
-  // 率指標かどうかを判定するヘルパー
-  const isRateMetric = (id) => ['avg', 'slg', 'ops', 'era', 'b_war', 'p_war'].includes(id);
-
+  // --- Baseball Savant風 ペースデータ構築 ---
   const paceData = useMemo(() => {
+    const isBatting = METRICS.batting.some(m => m.id === activeMetricId);
+    const group = isBatting ? 'hitting' : 'pitching';
     const data = [];
-    const startDate = new Date('2026-03-28'); 
-    const endDate = new Date('2026-09-30');   
-    const totalDays = (endDate - startDate) / (1000 * 60 * 60 * 24);
+    const maxGames = isBatting ? 162 : 35; // 投手は35登板程度を表示範囲に
     
-    for (let i = 0; i <= totalDays; i += 5) { 
-      const d = new Date(startDate);
-      d.setDate(startDate.getDate() + i);
-      const label = `${d.getMonth() + 1}/${d.getDate()}`;
-      const entry = { label };
+    for (let i = 1; i <= maxGames; i++) {
+      const entry = { label: `G${i}` };
       
-      ['2024', '2025', '2026'].forEach(year => {
-        const yearStat = stats.find(s => s.year === year) || {};
-        const val = yearStat[activeMetricId] || 0;
-        
-        if (year === '2026') {
-          if (d > TODAY) entry[year] = null;
-          else {
-            entry[year] = isRateMetric(activeMetricId) ? val : Math.floor(val * (i / 21)); 
-          }
-        } else {
-          entry[year] = isRateMetric(activeMetricId) ? val : Math.floor(val * (i / totalDays));
-        }
-      });
+      // 2024 (Real API Log)
+      const val24 = realLogs[2024][group][i-1]?.[activeMetricId];
+      if (val24 !== undefined) entry['2024'] = val24;
+      else if (i > 1 && realLogs[2024][group].length > 0) entry['2024'] = realLogs[2024][group][realLogs[2024][group].length - 1][activeMetricId]; // 最終値を引っぱる
+      
+      // 2025 (Simulated Log)
+      const val25 = SIMULATED_LOGS_2025[group][i-1]?.[activeMetricId];
+      if (val25 !== undefined) entry['2025'] = val25;
+      else if (i > 1 && SIMULATED_LOGS_2025[group].length > 0) entry['2025'] = SIMULATED_LOGS_2025[group][SIMULATED_LOGS_2025[group].length - 1][activeMetricId];
+
+      // 2026 (Real Live API Log)
+      const val26 = realLogs[2026][group][i-1]?.[activeMetricId];
+      if (val26 !== undefined) {
+         entry['2026'] = val26;
+      } else {
+         entry['2026'] = null; // 未来の試合は非表示
+      }
+
       data.push(entry);
     }
     return data;
-  }, [activeMetricId, stats]);
+  }, [activeMetricId, realLogs]);
 
   const annualData = useMemo(() => {
     return stats.map(stat => {
@@ -150,8 +257,14 @@ export default function App() {
            row[activeMetricId + '_total'] = stat[activeMetricId];
         } else {
           const cur = Number(stat[activeMetricId]) || 0;
-          const total = Math.round((cur / Math.max(1, gamesPlayed)) * TOTAL_GAMES);
-          row[activeMetricId + '_proj'] = Math.max(0, total - cur);
+          let total;
+          if (activeMetricId.includes('war')) {
+            total = Number(((cur / Math.max(1, gamesPlayed)) * TOTAL_GAMES).toFixed(1));
+            row[activeMetricId + '_proj'] = Number(Math.max(0, total - cur).toFixed(1));
+          } else {
+            total = Math.round((cur / Math.max(1, gamesPlayed)) * TOTAL_GAMES);
+            row[activeMetricId + '_proj'] = Math.max(0, total - cur);
+          }
           row[activeMetricId + '_total'] = total;
         }
       }
@@ -161,8 +274,8 @@ export default function App() {
 
   const formatValue = (id, val) => {
       if (val === null || val === undefined) return '-';
-      if (['avg', 'slg', 'ops'].includes(id)) return val.toFixed(3).replace(/^0+/, ''); // 0.324 -> .324
-      if (id === 'era') return val.toFixed(2);
+      if (['avg', 'slg', 'ops'].includes(id)) return val.toFixed(3).replace(/^0+/, '');
+      if (id === 'era' || id.includes('war')) return val.toFixed(id.includes('war') ? 1 : 2);
       return val;
   };
 
@@ -170,6 +283,7 @@ export default function App() {
     if (val === null || val === undefined) return '-';
     if (['avg', 'slg', 'ops'].includes(id)) return val.toFixed(3);
     if (id === 'era') return val.toFixed(2);
+    if (id.includes('war')) return val.toFixed(1);
     return val;
   }
 
@@ -190,7 +304,7 @@ export default function App() {
           <div className="flex items-center gap-2">
              <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-blue-500 animate-ping' : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'}`}></div>
              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                {isSyncing ? 'Syncing...' : `LIVE SYNCED: ${lastSync || 'READY'}`}
+                {isSyncing ? 'Syncing GameLogs...' : `LIVE SYNCED: ${lastSync || 'READY'}`}
              </p>
           </div>
           <div className="bg-blue-600/10 border border-blue-500/20 px-3 py-1.5 rounded-full text-[10px] md:text-xs font-black text-blue-400">
@@ -300,10 +414,10 @@ export default function App() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-auto">
           
-          {/* 折れ線グラフ: 各シーズンの日別成績比較 */}
+          {/* 折れ線グラフ: 各シーズンの日別成績比較 (GameLogベース) */}
           <div className="bg-slate-950/40 p-5 rounded-3xl border border-slate-800/50 flex flex-col h-[400px] relative">
             <div className="flex justify-between items-center mb-6">
-              <span className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><TrendingUp size={14} /> 各シーズンの日別成績比較</span>
+              <span className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><TrendingUp size={14} /> 試合ごとの成績推移 (GameLog)</span>
               <button 
                 onClick={() => setShowTodayCompare(!showTodayCompare)} 
                 className={`text-[10px] font-black px-3 py-1.5 rounded-lg border transition-all ${showTodayCompare ? 'bg-blue-600 border-blue-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}
@@ -316,12 +430,11 @@ export default function App() {
               <div className="absolute top-16 right-6 bg-[#0f172a] border border-slate-700 p-4 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-50 min-w-[180px] animation-fade-in">
                 <div className="text-[10px] font-black border-b border-slate-800 pb-2 mb-2 text-blue-400 uppercase tracking-tighter">最新時点の実績値</div>
                 {['2026', '2025', '2024'].map(year => {
-                  const val = stats.find(s => s.year === year)?.[activeMetricId] || 0;
-                  const displayVal = isRateMetric(activeMetricId) ? formatDisplayValue(activeMetricId, val) : (year === '2026' ? val : Math.round(val * (28/186)));
+                  const val = paceData.find(d => d.label === `G${gamesPlayed}`)?.[year] || 0;
                   return (
                     <div key={year} className="flex justify-between gap-6 py-1 font-mono text-xs">
                       <span className={year === '2026' ? 'text-white font-bold' : 'text-slate-500'}>{year}年:</span>
-                      <span className="font-bold text-white">{displayVal}</span>
+                      <span className="font-bold text-white">{formatDisplayValue(activeMetricId, val)}</span>
                     </div>
                   );
                 })}
@@ -337,7 +450,7 @@ export default function App() {
                     tickLine={false} 
                     axisLine={false} 
                     tickMargin={10}
-                    label={{ value: 'Season Progress (Apr-Sep)', position: 'insideBottom', offset: -10, fill: '#475569', fontSize: 10, fontWeight: 'bold' }}
+                    label={{ value: 'Season Progress (Game 1 - 162)', position: 'insideBottom', offset: -10, fill: '#475569', fontSize: 10, fontWeight: 'bold' }}
                 />
                 <YAxis 
                     fontSize={9} 
@@ -345,12 +458,19 @@ export default function App() {
                     tickLine={false} 
                     axisLine={false}
                     domain={isRateMetric(activeMetricId) && activeMetricId !== 'era' ? ['auto', 'auto'] : [0, 'auto']}
+                    tickFormatter={(val) => {
+                      if (['avg', 'slg', 'ops'].includes(activeMetricId)) return val.toFixed(3).replace(/^0+/, '');
+                      return val;
+                    }}
                     label={{ value: activeMetricObj.label + (activeMetricObj.unit ? ` (${activeMetricObj.unit})` : ''), angle: -90, position: 'insideLeft', offset: 0, fill: '#475569', fontSize: 10, fontWeight: 'bold' }}
                 />
-                <RechartsTooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', fontSize: '11px'}}/>
-                <Line name="2026 (Live)" type="monotone" dataKey="2026" stroke="#3b82f6" strokeWidth={4} dot={false} connectNulls />
-                <Line name="2025" type="monotone" dataKey="2025" stroke="#6366f1" strokeWidth={1.5} dot={false} strokeDasharray="5 5" opacity={0.5}/>
-                <Line name="2024" type="monotone" dataKey="2024" stroke="#f43f5e" strokeWidth={1.5} dot={false} opacity={0.4}/>
+                <RechartsTooltip 
+                  contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', fontSize: '11px'}}
+                  formatter={(value, name) => [formatDisplayValue(activeMetricId, value), name === '2026' ? '2026 (Live API)' : name]}
+                />
+                <Line name="2026" type="step" dataKey="2026" stroke="#3b82f6" strokeWidth={3} dot={false} connectNulls={false} />
+                <Line name="2025" type="step" dataKey="2025" stroke="#6366f1" strokeWidth={1.5} dot={false} opacity={0.5}/>
+                <Line name="2024" type="step" dataKey="2024" stroke="#f43f5e" strokeWidth={1.5} dot={false} opacity={0.4}/>
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -382,10 +502,9 @@ export default function App() {
                     const { x, y, width, value, index } = props;
                     if (value === 0 && index !== 5) return null;
                     const is2026 = annualData[index].year === '2026';
-                    const formattedValue = (activeMetricId === 'avg' || activeMetricId === 'slg' || activeMetricId === 'ops') ? value.toFixed(3) : (activeMetricId === 'era' ? value.toFixed(2) : value);
                     return (
                       <text x={x + width / 2} y={is2026 ? y + 14 : y - 10} fill={is2026 ? "#ffffff" : "#64748b"} fontSize={9} fontWeight="black" textAnchor="middle">
-                        {formattedValue}
+                        {formatValue(activeMetricId, value)}
                       </text>
                     );
                   }} />
@@ -413,7 +532,7 @@ export default function App() {
       </main>
 
       <footer className="max-w-6xl w-full mx-auto text-center text-[10px] text-slate-700 font-mono py-12 tracking-[0.4em] uppercase">
-        © 2026 Dodgers Nation Analytics • Engine v4.8.0 • All Stats Validated by MLB Official
+        © 2026 Dodgers Nation Analytics • Engine v50.0 (Savant Spec) • Validated by Official API
       </footer>
     </div>
   );
